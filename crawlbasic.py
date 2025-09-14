@@ -1,6 +1,7 @@
 import asyncio
 import json
 import base64
+import os
 from dotenv import load_dotenv
 from pathlib import Path
 from typing import List, Dict
@@ -227,3 +228,167 @@ async def demo_llm_structured_extraction_no_schema():
 
 # if __name__ == "__main__":
 #    asyncio.run(demo_llm_structured_extraction_no_schema())
+
+
+## RAW HTML AND FILE
+
+
+async def demo_raw_html_and_file():
+    """Process raw HTML and local files"""
+    print("\n === 5. Raw HTML and Local Files ===")
+
+    raw_html = """
+    <html><body>
+        <h1>Sample Article </h1>
+        <p>This is sample content for testing Crawl4AI's raw HTML processing. </p>
+    </body></html>
+    """
+
+    file_path = Path("tmp/sample.html").absolute()
+    with open(file_path, "w") as f:
+        f.write(raw_html)
+
+    async with AsyncWebCrawler() as crawler:
+        # Crawl raw HTML
+        raw_result = await crawler.arun(
+            url="raw:" + raw_html, config=CrawlerRunConfig(cache_mode=CacheMode.BYPASS)
+        )
+        print("Raw HTML processing:")
+        print(f" Markdown: {raw_result.markdown.raw_markdown[:50]}...")
+
+        # Craw local file
+        file_result = await crawler.arun(
+            url=f"file://{file_path}",
+            config=CrawlerRunConfig(cache_mode=CacheMode.BYPASS),
+        )
+
+        print("\nLocal file processing:")
+        print(f" Markdown: {file_result.markdown.raw_markdown[:50]}...")
+
+        # Clean up
+        os.remove(file_path)
+        print(f"Processed both raw HTML and local file ({file_path})")
+
+
+# if __name__ == "__main__":
+#    asyncio.run(demo_raw_html_and_file())
+
+## JS INTERACTION
+
+
+async def demo_js_interaction():
+    """Execute JavaScript to load more content"""
+    print("\n ===7. JavaScript Interaction ===")
+    # A simple page that need JS to reveal content
+    async with AsyncWebCrawler(config=BrowserConfig(headless=False)) as crawler:
+        # Initial load
+
+        news_schema = {
+            "name": "news",
+            "baseSelector": "tr.athing",
+            "fields": [
+                {
+                    "name": "title",
+                    "selector": "span.titleline",
+                    "type": "text",
+                }
+            ],
+        }
+        results: List[CrawlResult] = await crawler.arun(
+            url="https://news.ycombinator.com",
+            config=CrawlerRunConfig(
+                session_id="hn_session",
+                extraction_strategy=JsonCssExtractionStrategy(schema=news_schema),
+            ),
+        )
+
+        news = []
+        for result in results:
+            if result.success:
+                data = json.loads(result.extracted_content)
+                news.extend(data)
+                print(json.dumps(data, indent=2))
+            else:
+                print("Failed to extract structured data")
+        print(f"Initial items: {len(news)}")
+
+        # Click "More" link
+        more_config = CrawlerRunConfig(
+            js_code="document.querySelector('a.morelink').click();",
+            js_only=True,
+            session_id="hn_session",
+            extraction_strategy=JsonCssExtractionStrategy(
+                schema=news_schema,
+            ),
+        )
+        result = List[CrawlResult] = await crawler.arun(
+            url="https://news.ycombinator.com", config=more_config
+        )
+
+        for result in results:
+            if result.success:
+                data = json.loads(result.extracted_content)
+                news.extend(data)
+                print(json.dumps(data, indent=2))
+            else:
+                print("Failed to extract structured data")
+        print(f"Total items: {len(news)}")
+
+
+# if __name__ == "__main__":
+#    asyncio.run(demo_js_interaction())
+
+
+async def demo_deep_crawl():
+    """Deep Crawling with BFS strategy"""
+    print("\n === 6. Deep Crawling===")
+    filter_chain = FilterChain([DomainFilter(allowed_domains=["crawl4ai.com"])])
+
+    deep_crawl_strategy = BFSDeepCrawlStrategy(
+        max_depth=1, max_pages=5, filter_chain=filter_chain
+    )
+
+    async with AsyncWebCrawler() as crawler:
+        results: List[CrawlResult] = await crawler.arun(
+            url="https://docs.crawl4ai.com",
+            config=CrawlerRunConfig(deep_crawl_strategy=deep_crawl_strategy),
+        )
+        print(f"Deep crawl returned {len(results)} pages:")
+        for i, result in enumerate(results):
+            depth = result.metadata.get("depth", "unknown")
+            print(f" {i + 1}.{result.url}(Depth:{depth})")
+
+
+# if __name__ == "__main__":
+#    asyncio.run(demo_deep_crawl())
+
+
+## PROXY ROTATION:
+async def demo_proxy_rotation():
+    """Proxy rotation for multiple requests"""
+    print("\n ===6. Proxy Rotation===")
+
+    # Example proxies (replace with real ones)
+    proxies = [
+        ProxyConfig(server="http://proxy1.example.com:8080"),
+        ProxyConfig(server="http://proxy2.example.com:8080"),
+    ]
+
+    proxy_strategy = RoundRobinProxyStrategy(proxies)
+
+    print(f"Using {len(proxies)} proxies in rotation")
+    print(
+        "Note: This example uses placeholder proxies -  replace with real one to test."
+    )
+
+    async with AsyncWebCrawler() as crawler:
+        config = CrawlerRunConfig(
+            proxy_rotation_strategy=proxy_strategy, cache_mode=CacheMode.BYPASS
+        )
+
+        # In a real scenario, these would be run and the proxies would rotate
+        print("In a real scenario, request would rotate through the available proxies.")
+
+
+# if __name__ == "__main__":
+#    asyncio.run(demo_proxy_rotation())
